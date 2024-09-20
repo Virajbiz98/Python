@@ -4,35 +4,6 @@ from tkinter import messagebox
 # Sample user data
 users = {"user1": "password1", "user2": "password2"}
 
-def login():
-    username = entry_username.get()
-    password = entry_password.get()
-    if username in users and users[username] == password:
-        messagebox.showinfo("Login", "Login Successful")
-        open_banking_interface()
-    else:
-        messagebox.showerror("Login", "Invalid Username or Password")
-
-def open_banking_interface():
-    login_window.destroy()
-    banking_interface()
-
-# Login GUI setup
-login_window = tk.Tk()
-login_window.title("Login")
-
-tk.Label(login_window, text="Username").pack()
-entry_username = tk.Entry(login_window)
-entry_username.pack()
-
-tk.Label(login_window, text="Password").pack()
-entry_password = tk.Entry(login_window, show="*")
-entry_password.pack()
-
-tk.Button(login_window, text="Login", command=login).pack()
-
-login_window.mainloop()
-
 class BankAccount:
     def __init__(self, account_holder, balance=0):
         self.account_holder = account_holder
@@ -50,7 +21,8 @@ class BankAccount:
             print("Insufficient funds")
 
     def check_balance(self):
-        print(f"Current balance is {self.balance}")
+        return self.balance
+
 def transfer_money(sender, receiver, amount):
     if sender.balance >= amount:
         sender.withdraw(amount)
@@ -58,6 +30,20 @@ def transfer_money(sender, receiver, amount):
         print(f"Transferred {amount} from {sender.account_holder} to {receiver.account_holder}")
     else:
         print("Insufficient funds for transfer")
+
+def login():
+    username = entry_username.get()
+    password = entry_password.get()
+    if username in users and users[username] == password:
+        messagebox.showinfo("Login", "Login Successful")
+        open_banking_interface()
+    else:
+        messagebox.showerror("Login", "Invalid Username or Password")
+
+def open_banking_interface():
+    login_window.destroy()
+    banking_interface()
+
 def banking_interface():
     bank_window = tk.Tk()
     bank_window.title("Banking Interface")
@@ -66,22 +52,31 @@ def banking_interface():
     account2 = BankAccount("Bob", 500)
 
     def show_balance():
-        messagebox.showinfo("Balance", f"Balance: {account1.balance}")
+        messagebox.showinfo("Balance", f"Balance: {account1.check_balance()}")
 
     def deposit_money():
-        amount = int(entry_amount.get())
-        account1.deposit(amount)
-        show_balance()
+        try:
+            amount = int(entry_amount.get())
+            account1.deposit(amount)
+            show_balance()
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid amount.")
 
     def withdraw_money():
-        amount = int(entry_amount.get())
-        account1.withdraw(amount)
-        show_balance()
+        try:
+            amount = int(entry_amount.get())
+            account1.withdraw(amount)
+            show_balance()
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid amount.")
 
     def transfer_money_gui():
-        amount = int(entry_amount.get())
-        transfer_money(account1, account2, amount)
-        show_balance()
+        try:
+            amount = int(entry_amount.get())
+            transfer_money(account1, account2, amount)
+            show_balance()
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid amount.")
 
     tk.Label(bank_window, text="Amount").pack()
     entry_amount = tk.Entry(bank_window)
@@ -93,4 +88,19 @@ def banking_interface():
     tk.Button(bank_window, text="Check Balance", command=show_balance).pack()
 
     bank_window.mainloop()
-# Place the login and banking interface code here
+
+# Login GUI setup
+login_window = tk.Tk()
+login_window.title("Login")
+
+tk.Label(login_window, text="Username").pack()
+entry_username = tk.Entry(login_window)
+entry_username.pack()
+
+tk.Label(login_window, text="Password").pack()
+entry_password = tk.Entry(login_window, show="*")
+entry_password.pack()
+
+tk.Button(login_window, text="Login", command=login).pack()
+
+login_window.mainloop()
