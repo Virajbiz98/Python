@@ -36,3 +36,14 @@ import array
 arr =array.array('i', [2,4,5,4,4,6,6,3,4,6])
 arr.remove(6)
 print(arr)
+----------- 
+import array
+arr =array.array('i', [2,4,5,4,4,6,6,3,4,6])
+index = arr.index(6)
+print(index)
+---------
+import array
+arr =array.array('i', [2,4,5,4,4,6,6,3,4,6])
+sliced_arr=arr[3:6]
+print(sliced_arr)
+---------
