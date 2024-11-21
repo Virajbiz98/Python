@@ -1,3 +1,211 @@
+import cv2
+import numpy as np
+import pyautogui
+import sounddevice as sd
+import wave
+import threading
+import time
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import os
+import ffmpeg
+import logging
+
+# Setup Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class ScreenRecorderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("VJB Screen Recorder")
+
+        # Variables
+        self.recording = False
+        self.is_paused = False
+        self.output_file = "screen_recording.mp4"
+        self.audio_file = "audio.wav"
+        self.final_output = ""
+        self.fps = 20
+        self.duration = 0  # 0 means unlimited
+        self.selected_resolution = (1280, 720)  # Default resolution (720p)
+        self.audio_bitrate = "128k"  # Default bitrate
+        self.screen_size = pyautogui.size()
+
+        # Resolution Options
+        self.resolution_options = {
+            "Low (480p)": (640, 480),
+            "Medium (720p)": (1280, 720),
+            "High (1080p)": (1920, 1080),
+            "Full Screen": self.screen_size
+        }
+
+        # Create GUI
+        self.create_widgets()
+
+    def create_widgets(self):
+        tk.Label(self.root, text="VJB Screen Recorder", font=("Arial", 16)).pack(pady=10)
+
+        self.record_button = tk.Button(self.root, text="Start Recording", command=self.start_recording, bg="green", fg="white", width=20)
+        self.record_button.pack(pady=5)
+
+        self.stop_button = tk.Button(self.root, text="Stop Recording", command=self.stop_recording, bg="red", fg="white", width=20)
+        self.stop_button.pack(pady=5)
+
+        self.pause_button = tk.Button(self.root, text="Pause Recording", command=self.pause_recording, bg="yellow", fg="black", width=20)
+        self.pause_button.pack(pady=5)
+
+        self.resume_button = tk.Button(self.root, text="Resume Recording", command=self.resume_recording, bg="blue", fg="white", width=20)
+        self.resume_button.pack(pady=5)
+
+        tk.Button(self.root, text="Set Output File", command=self.set_output_file, width=20).pack(pady=5)
+
+        tk.Label(self.root, text="Video Quality (Resolution):", font=("Arial", 12)).pack(pady=5)
+        self.resolution_var = tk.StringVar(value="Medium (720p)")
+        self.resolution_menu = tk.OptionMenu(self.root, self.resolution_var, *self.resolution_options.keys())
+        self.resolution_menu.pack(pady=5)
+
+        tk.Label(self.root, text="Audio Quality (Bitrate):", font=("Arial", 12)).pack(pady=5)
+        self.audio_quality_var = tk.StringVar(value="128 kbps")
+        self.audio_quality_menu = tk.OptionMenu(self.root, self.audio_quality_var, "64 kbps", "128 kbps", "192 kbps", "320 kbps")
+        self.audio_quality_menu.pack(pady=5)
+
+        tk.Label(self.root, text="Duration (seconds, 0 for unlimited):", font=("Arial", 12)).pack(pady=5)
+        self.duration_entry = tk.Entry(self.root)
+        self.duration_entry.insert(0, "0")
+        self.duration_entry.pack(pady=5)
+
+        tk.Button(self.root, text="Exit", command=self.root.quit, bg="gray", fg="white", width=20).pack(pady=5)
+
+        self.recording_label = tk.Label(self.root, text="", font=("Arial", 12), fg="red")
+        self.recording_label.pack(pady=10)
+
+        # Progress Bar
+        self.progress = ttk.Progressbar(self.root, orient="horizontal", length=300, mode="determinate")
+        self.progress.pack(pady=10)
+
+    def set_output_file(self):
+        self.final_output = filedialog.asksaveasfilename(
+            defaultextension=".mp4",
+            filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")]
+        )
+        if self.final_output and os.path.exists(self.final_output):
+            if not messagebox.askyesno("File Exists", "The file already exists. Overwrite?"):
+                self.final_output = ""
+                return
+        if self.final_output:
+            messagebox.showinfo("File Saved", f"Output file set to: {self.final_output}")
+
+    def start_recording(self):
+        if self.recording:
+            messagebox.showwarning("Warning", "Recording is already in progress!")
+            return
+
+        if not self.final_output:
+            messagebox.showwarning("Warning", "Please set the output file first!")
+            return
+
+        try:
+            self.duration = int(self.duration_entry.get())
+            self.selected_resolution = self.resolution_options[self.resolution_var.get()]
+            self.audio_bitrate = self.audio_quality_var.get().replace(" kbps", "k")
+        except ValueError:
+            messagebox.showerror("Error", "Invalid duration input!")
+            return
+
+        self.recording = True
+        self.is_paused = False
+        self.recording_label.config(text="Recording...")
+        self.progress['value'] = 0
+        self.root.update_idletasks()
+
+        threading.Thread(target=self.record_screen).start()
+        threading.Thread(target=self.record_audio).start()
+        messagebox.showinfo("Recording", "Recording started. Click 'Stop Recording' to finish.")
+
+    def stop_recording(self):
+        if not self.recording:
+            messagebox.showwarning("Warning", "No recording in progress!")
+            return
+
+        self.recording = False
+        self.recording_label.config(text="")
+        self.progress['value'] = 100
+        self.root.update_idletasks()
+
+        self.combine_audio_video()
+
+    def pause_recording(self):
+        if not self.recording or self.is_paused:
+            messagebox.showwarning("Warning", "Cannot pause recording!")
+            return
+
+        self.is_paused = True
+        self.recording_label.config(text="Recording Paused")
+
+    def resume_recording(self):
+        if not self.recording or not self.is_paused:
+            messagebox.showwarning("Warning", "Cannot resume recording!")
+            return
+
+        self.is_paused = False
+        self.recording_label.config(text="Recording...")
+
+    def record_screen(self):
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        out = cv2.VideoWriter(self.output_file, fourcc, self.fps, self.selected_resolution)
+
+        start_time = time.time()
+        while self.recording:
+            if not self.is_paused:
+                img = pyautogui.screenshot()
+                img = img.resize(self.selected_resolution)
+                frame = np.array(img)
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                out.write(frame)
+
+                elapsed_time = time.time() - start_time
+                if self.duration and elapsed_time >= self.duration:
+                    self.recording = False
+                    break
+                self.update_progress(elapsed_time)
+            time.sleep(1 / self.fps)
+
+        out.release()
+
+    def record_audio(self):
+        fs = 44100
+        channels = 2
+
+        with wave.open(self.audio_file, "wb") as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(2)
+            wf.setframerate(fs)
+
+            while self.recording:
+                if not self.is_paused:
+                    audio_data = sd.rec(int(fs), samplerate=fs, channels=channels, dtype='int16')
+                    sd.wait()
+                    wf.writeframes(audio_data.tobytes())
+
+    def combine_audio_video(self):
+        try:
+            video_input = ffmpeg.input(self.output_file)
+            audio_input = ffmpeg.input(self.audio_file)
+            ffmpeg.output(video_input, audio_input, self.final_output, vcodec="libx264", acodec="aac", audio_bitrate=self.audio_bitrate).run(overwrite_output=True)
+            messagebox.showinfo("Success", f"Final video saved as: {self.final_output}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to merge video and audio: {e}")
+
+    def update_progress(self, elapsed_time):
+        if self.duration > 0:
+            progress = (elapsed_time / self.duration) * 100
+            self.root.after(0, self.progress.set, progress)
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ScreenRecorderApp(root)
+    root.mainloop()
 import pyautogui
 import cv2
 import numpy as np
